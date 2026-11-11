@@ -17,11 +17,8 @@ package org.springframework.samples.petclinic.owner;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -50,10 +47,10 @@ class OwnerController {
 
 	private static final String VIEWS_OWNER_CREATE_OR_UPDATE_FORM = "owners/createOrUpdateOwnerForm";
 
-	private final OwnerRepository owners;
+	private final OwnerService ownerService;
 
-	public OwnerController(OwnerRepository owners) {
-		this.owners = owners;
+	public OwnerController(OwnerService ownerService) {
+		this.ownerService = ownerService;
 	}
 
 	@InitBinder
@@ -63,10 +60,7 @@ class OwnerController {
 
 	@ModelAttribute("owner")
 	public Owner findOwner(@PathVariable(name = "ownerId", required = false) Integer ownerId) {
-		return ownerId == null ? new Owner()
-				: this.owners.findById(ownerId)
-					.orElseThrow(() -> new IllegalArgumentException("Owner not found with id: " + ownerId
-							+ ". Please ensure the ID is correct " + "and the owner exists in the database."));
+		return ownerId == null ? new Owner() : this.ownerService.findOwnerById(ownerId);
 	}
 
 	@GetMapping("/owners/new")
@@ -81,7 +75,7 @@ class OwnerController {
 			return VIEWS_OWNER_CREATE_OR_UPDATE_FORM;
 		}
 
-		this.owners.save(owner);
+		this.ownerService.saveOwner(owner);
 		redirectAttributes.addFlashAttribute("message", "New Owner Created");
 		return "redirect:/owners/" + owner.getId();
 	}
@@ -95,17 +89,11 @@ class OwnerController {
 	public String processFindForm(@RequestParam(defaultValue = "1") int page, Owner owner, BindingResult result,
 			Model model, RedirectAttributes redirectAttributes) {
 		// allow parameterless GET request for /owners to return all records
-		String lastName = owner.getLastName();
-		if (lastName == null) {
-			lastName = ""; // empty string signifies broadest possible search
-		}
-		else {
-			lastName = lastName.strip();
-		}
+		String lastName = this.ownerService.normalizeLastName(owner.getLastName());
 
 		// find owners by last name
-		Page<Owner> ownersResults = findPaginatedForOwnersLastName(page, lastName);
-		if (page < 1 || page > Math.max(ownersResults.getTotalPages(), 1)) {
+		Page<Owner> ownersResults = this.ownerService.findOwnersByLastName(lastName, page);
+		if (this.ownerService.isPageOutOfBounds(page, ownersResults)) {
 			redirectAttributes.addAttribute("page", 1);
 			if (!lastName.isEmpty()) {
 				redirectAttributes.addAttribute("lastName", lastName);
@@ -138,13 +126,6 @@ class OwnerController {
 		return "owners/ownersList";
 	}
 
-	private Page<Owner> findPaginatedForOwnersLastName(int page, String lastname) {
-		int pageSize = 5;
-		int validatedPage = Math.max(page, 1);
-		Pageable pageable = PageRequest.of(validatedPage - 1, pageSize);
-		return owners.findByLastNameStartingWith(lastname, pageable);
-	}
-
 	@GetMapping("/owners/{ownerId}/edit")
 	public String initUpdateOwnerForm() {
 		return VIEWS_OWNER_CREATE_OR_UPDATE_FORM;
@@ -164,8 +145,7 @@ class OwnerController {
 			return "redirect:/owners/{ownerId}/edit";
 		}
 
-		owner.setId(ownerId);
-		this.owners.save(owner);
+		this.ownerService.updateOwner(ownerId, owner);
 		redirectAttributes.addFlashAttribute("message", "Owner Values Updated");
 		return "redirect:/owners/{ownerId}";
 	}
@@ -178,10 +158,7 @@ class OwnerController {
 	@GetMapping("/owners/{ownerId}")
 	public ModelAndView showOwner(@PathVariable("ownerId") int ownerId) {
 		ModelAndView mav = new ModelAndView("owners/ownerDetails");
-		Optional<Owner> optionalOwner = this.owners.findById(ownerId);
-		Owner owner = optionalOwner.orElseThrow(() -> new IllegalArgumentException(
-				"Owner not found with id: " + ownerId + ". Please ensure the ID is correct "));
-		mav.addObject(owner);
+		mav.addObject(this.ownerService.findOwnerById(ownerId));
 		return mav;
 	}
 
